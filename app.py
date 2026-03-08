@@ -50,7 +50,6 @@ from data_fetcher import (
 
 st.set_page_config(
     page_title  = "Dansk Investerings Dashboard",
-    page_icon   = "🇩",
     layout      = "wide",
     initial_sidebar_state = "expanded",
 )
@@ -1174,6 +1173,31 @@ def render_overview(engine: DanishTaxEngine):
     sankey.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(sankey, use_container_width=True)
 
+    route_df = pd.DataFrame(
+        {
+            "Trin": [
+                "1) Likvid reserve",
+                "2) ASK top-up",
+                "3) Investerbar udenfor ASK",
+            ],
+            "Beløb nu": [
+                fmt_dkk(min(current_cash, reserve_target)),
+                fmt_dkk(ask_top_up_now),
+                fmt_dkk(outside_ask_now),
+            ],
+            "Hvad betyder det": [
+                "Buffer til uforudsete udgifter og stabilt cashflow.",
+                "Fylder skatteeffektiv ASK-kapacitet først.",
+                "Allokeres i valgt kontoarkitektur (privat/holding/hybrid).",
+            ],
+        }
+    )
+    st.dataframe(route_df, width="stretch", hide_index=True)
+    st.caption(
+        "Læs grafen fra venstre mod højre: den viser kun din nuværende likviditet fordelt i prioriteret rækkefølge, "
+        "ikke en afkastprognose i sig selv. Prognoser vises i Scenario Simulatoren."
+    )
+
     st.subheader("🧭 Kontostruktur: hvad betyder dit valg?")
     arch_df = pd.DataFrame(
         [
@@ -1184,6 +1208,96 @@ def render_overview(engine: DanishTaxEngine):
     )
     st.dataframe(arch_df, width="stretch", hide_index=True)
     st.info(f"Aktuel global præference i venstre panel: **{account_arch}**")
+
+    with st.expander("🏢 Holding ApS: praktiske fordele og trade-offs", expanded=False):
+        st.markdown(
+            """
+**Fordele ved videreføring af midler (familie/generation):**
+- Midler kan blive i selskabet og reinvesteres uden privat udlodning hvert år.
+- Ejerskab kan struktureres via anparter, som kan overdrages gradvist (kræver juridisk/skatterådgivning).
+- Giver bedre ramme for fælles familieformål, når kapital skal forvaltes over længere tid.
+
+**Fordele ved investering i unoterede aktieposter:**
+- Holding er ofte et mere naturligt investeringskøretøj til illikvide/unoterede cases.
+- Gevinster kan i mange cases geninvesteres i selskabet før privat udlodning.
+- Bedre operationel adskillelse mellem privat økonomi og høj-risiko/illikvide investeringer.
+
+**Vigtige trade-offs:**
+- Årlige administrationsomkostninger, compliance og regnskab.
+- Dobbelt lag af skat kan opstå ved senere privat udlodning.
+- Kræver disciplineret governance (ejeraftale, fuldmagter, succession-plan).
+            """
+        )
+        st.caption(
+            "Dette er en forenklet beslutningsstøtte. Konkrete succession-/overdragelsesforhold skal vurderes af revisor/advokat."
+        )
+
+        st.markdown("**Hvornår giver Holding typisk mening? (indikator)**")
+        unlisted_focus = st.toggle(
+            "Plan om investering i unoterede aktieposter via selskab",
+            value=False,
+            key="overview_holding_unlisted_focus",
+        )
+        family_succession_focus = st.toggle(
+            "Ønske om gradvis familieoverdragelse/succession",
+            value=False,
+            key="overview_holding_family_focus",
+        )
+
+        fit_score = 0
+        factors = []
+
+        if outside_ask_now >= 1_000_000:
+            fit_score += 35
+            factors.append("Stor investerbar kapital udenfor ASK (+35)")
+        elif outside_ask_now >= 400_000:
+            fit_score += 20
+            factors.append("Moderat investerbar kapital udenfor ASK (+20)")
+        else:
+            fit_score += 5
+            factors.append("Begrænset investerbar kapital udenfor ASK (+5)")
+
+        if annual_income >= 1_200_000:
+            fit_score += 25
+            factors.append("Høj husholdningsindkomst (+25)")
+        elif annual_income >= 800_000:
+            fit_score += 15
+            factors.append("Mellem-høj husholdningsindkomst (+15)")
+        else:
+            fit_score += 5
+            factors.append("Lavere husholdningsindkomst (+5)")
+
+        if ask_room <= 0:
+            fit_score += 10
+            factors.append("ASK er fyldt, fokus flytter udenfor ASK (+10)")
+
+        if account_arch in ("Holding ApS", "Hybrid"):
+            fit_score += 10
+            factors.append("Valgt arkitektur indeholder allerede selskabselement (+10)")
+
+        if unlisted_focus:
+            fit_score += 15
+            factors.append("Unoteret investeringsfokus (+15)")
+        if family_succession_focus:
+            fit_score += 15
+            factors.append("Familie-/succession-fokus (+15)")
+
+        if fit_score >= 70:
+            fit_label = "Høj relevans"
+            fit_hint = "Holding kan være strukturelt relevant at analysere i dybden."
+        elif fit_score >= 40:
+            fit_label = "Mellem relevans"
+            fit_hint = "Holding kan være relevant i hybrid opsætning, afhængigt af tidshorisont og governance."
+        else:
+            fit_label = "Lav relevans"
+            fit_hint = "Privat struktur er ofte enklere på nuværende niveau; Holding kan revurderes senere."
+
+        f1, f2 = st.columns([1, 2])
+        f1.metric("Holding-fit score", f"{fit_score}/100", fit_label)
+        f2.info(fit_hint)
+
+        factor_df = pd.DataFrame({"Bidrag": factors})
+        st.dataframe(factor_df, width="stretch", hide_index=True)
 
     st.subheader("📌 Hvad appen gør for dig")
     c1, c2, c3 = st.columns(3)

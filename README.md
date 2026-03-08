@@ -14,10 +14,17 @@ Bygget med 2026-skatteregler (forenklet model).
 ```bash
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m streamlit run app.py
+python -m streamlit run app.py --server.port 8501
 ```
 
 Åbner på `http://localhost:8501`
+
+If not running:
+```bash
+kill 53132
+source .venv/bin/activate
+python -m streamlit run app.py --server.port 8501
+```
 
 ---
 
