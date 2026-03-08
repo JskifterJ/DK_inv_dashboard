@@ -1232,7 +1232,224 @@ def render_overview(engine: DanishTaxEngine):
             "Dette er en forenklet beslutningsstøtte. Konkrete succession-/overdragelsesforhold skal vurderes af revisor/advokat."
         )
 
+        st.markdown("**Hvorfor kan Holding give mening ved familieoverdragelse (lang sigt)?**")
+        st.markdown(
+            """
+- **Skatteudskydelse i praksis:** afkast kan blive i selskabet og geninvesteres efter selskabsskat, uden at udløse privat udbytteskat hvert år.
+- **Kontrolleret generationsskifte:** anparter kan overdrages gradvist, så værditilvækst i højere grad kan flytte over i næste generation over tid.
+- **Bedre planlægningsrum:** familie kan arbejde med ejeraftale, stemmerettigheder og timing af udlodninger i stedet for at realisere privat løbende.
+
+Langsigtet pointe: jo længere kapitalen kan arbejde inde i strukturen før privat udlodning, jo større bliver effekten af udskudt privatbeskatning.
+            """
+        )
+
+        st.markdown("**Hvordan foregår overdragelse af anparter typisk? (forenklet)**")
+        transfer_steps = pd.DataFrame(
+            {
+                "Trin": [
+                    "1) Struktur",
+                    "2) Værdiansættelse",
+                    "3) Overdragelse i etaper",
+                    "4) Governance",
+                    "5) Udlodningspolitik",
+                ],
+                "Hvad der sker": [
+                    "Familieformue samles i holdingselskab i stedet for spredte private depoter.",
+                    "Anparter prissættes (typisk med rådgiver), så overdragelse sker på dokumenteret grundlag.",
+                    "Anparter gives/sælges gradvist over flere år i stedet for alt på én gang.",
+                    "Ejeraftale fastlægger stemmer, vetoret, roller og konfliktløsning.",
+                    "Familien styrer hvornår der udloddes privat, og hvornår kapitalen bliver i selskabet.",
+                ],
+                "Hvorfor det kan give mening": [
+                    "Mere samlet kapitalforvaltning og bedre kontinuitet.",
+                    "Reducerer risiko for skattemæssige tvister senere.",
+                    "Gør generationsskifte operationelt mere robust.",
+                    "Forebygger fremtidige familie-/ejerskabskonflikter.",
+                    "Maksimerer compounding før privat beskatning.",
+                ],
+            }
+        )
+        st.dataframe(transfer_steps, width="stretch", hide_index=True)
+
+        st.markdown("**Illustrativt rationale (ikke rådgivning): hvorfor timing af privat skat betyder noget**")
+        example_base = 1_000_000
+        example_return = 0.08
+        years_example = 10
+        corp_after_tax = example_return * (1 - CORPORATE_TAX_RATE)
+        gross_company_value = example_base * ((1 + corp_after_tax) ** years_example)
+        distributed_company_value = gross_company_value * (1 - AKTIEINDKOMST_HIGH_RATE)
+
+        private_after_tax_return = example_return * (1 - AKTIEINDKOMST_HIGH_RATE)
+        private_value = example_base * ((1 + private_after_tax_return) ** years_example)
+
+        illustration_df = pd.DataFrame(
+            {
+                "Spor": [
+                    "Selskabsspor: først reinvestering i Holding (22 %), udlodning til sidst",
+                    "Privat spor: afkast beskattes løbende med høj aktieindkomstsats",
+                ],
+                f"Værdi efter {years_example} år": [
+                    fmt_dkk(distributed_company_value),
+                    fmt_dkk(private_value),
+                ],
+                "Forklaring": [
+                    "Privat skat udskydes til udlodningstidspunkt; kapital arbejder længere i selskabet.",
+                    "Løbende privatbeskatning reducerer den kapital, der kan geninvesteres hvert år.",
+                ],
+            }
+        )
+        st.dataframe(illustration_df, width="stretch", hide_index=True)
+        st.caption(
+            "Eksemplet er forenklet og afhænger af konkrete regler om udbytte, succession, gave/arv og værdiansættelse. "
+            "Brug altid revisor/advokat før implementering."
+        )
+
+        st.markdown("**Interaktiv mini-kalkulator: udskudt privat skat vs løbende privat skat**")
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            calc_start = int_input_with_commas(
+                "Startkapital (DKK)",
+                key="holding_calc_start_capital",
+                min_value=100_000,
+                max_value=100_000_000,
+                value=2_000_000,
+                step=100_000,
+            )
+        with k2:
+            calc_years = st.slider("Horisont (år)", 5, 40, 15, key="holding_calc_years")
+        with k3:
+            calc_return = st.slider("Bruttoafkast (% p.a.)", 2.0, 15.0, 8.0, 0.25, key="holding_calc_return") / 100
+        with k4:
+            calc_private_tax = st.slider(
+                "Privat effektiv afkastskat (%)",
+                10.0,
+                55.0,
+                AKTIEINDKOMST_HIGH_RATE * 100,
+                0.5,
+                key="holding_calc_private_tax",
+            ) / 100
+
+        calc_corp_after_tax = calc_return * (1 - CORPORATE_TAX_RATE)
+        calc_holding_pre_distribution = calc_start * ((1 + calc_corp_after_tax) ** calc_years)
+        calc_holding_final = calc_holding_pre_distribution * (1 - calc_private_tax)
+
+        calc_private_after_tax_return = calc_return * (1 - calc_private_tax)
+        calc_private_final = calc_start * ((1 + calc_private_after_tax_return) ** calc_years)
+        calc_delta = calc_holding_final - calc_private_final
+
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Holding-spor (udlodning ved slut)", fmt_dkk(calc_holding_final))
+        r2.metric("Privat spor (løbende skat)", fmt_dkk(calc_private_final))
+        r3.metric("Forskel", fmt_dkk(calc_delta))
+
+        years_axis = np.arange(0, calc_years + 1)
+        private_path = calc_start * np.power(1 + calc_private_after_tax_return, years_axis)
+        holding_pre_path = calc_start * np.power(1 + calc_corp_after_tax, years_axis)
+
+        calc_fig = go.Figure()
+        calc_fig.add_trace(
+            go.Scatter(
+                x=years_axis,
+                y=private_path,
+                mode="lines",
+                name="Privat (løbende skat)",
+                line=dict(color="#1565C0", width=3),
+            )
+        )
+        calc_fig.add_trace(
+            go.Scatter(
+                x=years_axis,
+                y=holding_pre_path,
+                mode="lines",
+                name="Holding (før udlodning)",
+                line=dict(color="#2E7D32", width=3),
+            )
+        )
+        calc_fig.add_trace(
+            go.Scatter(
+                x=[calc_years],
+                y=[calc_holding_final],
+                mode="markers",
+                name="Holding (efter udlodning i slutår)",
+                marker=dict(color="#2E7D32", size=11, symbol="diamond"),
+            )
+        )
+        calc_fig.update_layout(
+            title="År-for-år divergens: privat løbende skat vs holding med udlodning i slutår",
+            xaxis_title="År",
+            yaxis_title="DKK",
+            height=320,
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            hovermode="x unified",
+        )
+        st.plotly_chart(calc_fig, use_container_width=True)
+        st.caption(
+            "Grøn linje er kapital i selskabet før privat udlodning. Grøn diamant viser værdi efter privat skat ved udlodning i slutåret."
+        )
+
+        calc_df = pd.DataFrame(
+            {
+                "Trin": [
+                    "Bruttoafkast",
+                    "Afkast efter selskabsskat",
+                    "Holding værdi før udlodning (slutår)",
+                    "Holding værdi efter privat skat ved udlodning",
+                    "Privat afkast efter løbende skat",
+                    "Privat værdi (slutår)",
+                ],
+                "Værdi": [
+                    fmt_pct(calc_return),
+                    fmt_pct(calc_corp_after_tax),
+                    fmt_dkk(calc_holding_pre_distribution),
+                    fmt_dkk(calc_holding_final),
+                    fmt_pct(calc_private_after_tax_return),
+                    fmt_dkk(calc_private_final),
+                ],
+            }
+        )
+        st.dataframe(calc_df, width="stretch", hide_index=True)
+
         st.markdown("**Hvornår giver Holding typisk mening? (indikator)**")
+        t1, t2 = st.columns(2)
+        with t1:
+            cap_medium_threshold = int_input_with_commas(
+                "Tærskel: moderat kapital udenfor ASK (DKK)",
+                key="overview_holding_cap_medium",
+                min_value=100_000,
+                max_value=5_000_000,
+                value=400_000,
+                step=50_000,
+            )
+            cap_high_threshold = int_input_with_commas(
+                "Tærskel: høj kapital udenfor ASK (DKK)",
+                key="overview_holding_cap_high",
+                min_value=200_000,
+                max_value=10_000_000,
+                value=1_000_000,
+                step=50_000,
+            )
+        with t2:
+            income_medium_threshold = int_input_with_commas(
+                "Tærskel: mellem-høj indkomst (DKK/år)",
+                key="overview_holding_income_medium",
+                min_value=300_000,
+                max_value=3_000_000,
+                value=800_000,
+                step=25_000,
+            )
+            income_high_threshold = int_input_with_commas(
+                "Tærskel: høj indkomst (DKK/år)",
+                key="overview_holding_income_high",
+                min_value=400_000,
+                max_value=5_000_000,
+                value=1_200_000,
+                step=25_000,
+            )
+
+        cap_high_threshold = max(cap_high_threshold, cap_medium_threshold + 50_000)
+        income_high_threshold = max(income_high_threshold, income_medium_threshold + 25_000)
+
         unlisted_focus = st.toggle(
             "Plan om investering i unoterede aktieposter via selskab",
             value=False,
@@ -1247,20 +1464,20 @@ def render_overview(engine: DanishTaxEngine):
         fit_score = 0
         factors = []
 
-        if outside_ask_now >= 1_000_000:
+        if outside_ask_now >= cap_high_threshold:
             fit_score += 35
             factors.append("Stor investerbar kapital udenfor ASK (+35)")
-        elif outside_ask_now >= 400_000:
+        elif outside_ask_now >= cap_medium_threshold:
             fit_score += 20
             factors.append("Moderat investerbar kapital udenfor ASK (+20)")
         else:
             fit_score += 5
             factors.append("Begrænset investerbar kapital udenfor ASK (+5)")
 
-        if annual_income >= 1_200_000:
+        if annual_income >= income_high_threshold:
             fit_score += 25
             factors.append("Høj husholdningsindkomst (+25)")
-        elif annual_income >= 800_000:
+        elif annual_income >= income_medium_threshold:
             fit_score += 15
             factors.append("Mellem-høj husholdningsindkomst (+15)")
         else:
