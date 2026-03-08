@@ -1,0 +1,26 @@
+# ══════════════════════════════════════════════════════════════════════
+# requirements.txt
+# Dansk Investerings Dashboard — Python dependencies
+# ══════════════════════════════════════════════════════════════════════
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# Minimum Python version: 3.10+
+# ══════════════════════════════════════════════════════════════════════
+
+# Core framework
+streamlit>=1.35.0
+
+# Data manipulation
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Interactive visualisations
+plotly>=5.20.0
+
+# Live market data
+yfinance>=0.2.40
+
+# (Optional) Faster yfinance data parsing
+# lxml>=5.0.0
