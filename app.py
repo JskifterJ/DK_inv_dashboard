@@ -50,7 +50,7 @@ from data_fetcher import (
 
 st.set_page_config(
     page_title  = "Dansk Investerings Dashboard",
-    page_icon   = "🇩🇰",
+    page_icon   = "🇩",
     layout      = "wide",
     initial_sidebar_state = "expanded",
 )
@@ -636,6 +636,12 @@ def simulate_mixed_portfolio(
     ask_cap: float,
     leverage_amount: float,
     mortgage_rate: float,
+    retirement_start_year: int | None = None,
+    phase_down_years: int = 0,
+    salary_after_retirement_pct: float = 0.0,
+    annual_public_pension: float = 0.0,
+    annual_private_pension: float = 0.0,
+    pension_tax_rate: float = 0.37,
     free_cashflow_invest_share: float = 1.0,
     annual_salary_growth: float = 0.0,
     inflation_rate: float = 0.0,
@@ -689,7 +695,26 @@ def simulate_mixed_portfolio(
             curr_fixed *= (1 + inflation_rate)
             curr_car_dep *= (1 + inflation_rate)
 
-        after_tax_salary = curr_salary * (1 - effective_income_tax)
+        salary_factor = 1.0
+        if retirement_start_year is not None:
+            retirement_year = max(1, int(retirement_start_year))
+            post_ret_factor = min(1.0, max(0.0, salary_after_retirement_pct / 100))
+            phase_years = max(0, int(phase_down_years))
+            phase_start = max(1, retirement_year - phase_years)
+
+            if year >= retirement_year:
+                salary_factor = post_ret_factor
+            elif year >= phase_start and phase_years > 0:
+                progress = (year - phase_start + 1) / max(1, (retirement_year - phase_start + 1))
+                salary_factor = 1.0 + (post_ret_factor - 1.0) * progress
+
+        gross_labor_income = curr_salary * salary_factor
+        after_tax_salary = gross_labor_income * (1 - effective_income_tax)
+
+        gross_pension_income = 0.0
+        if retirement_start_year is not None and year >= max(1, int(retirement_start_year)):
+            gross_pension_income = max(0.0, annual_public_pension) + max(0.0, annual_private_pension)
+        after_tax_pension_income = gross_pension_income * (1 - min(0.70, max(0.0, pension_tax_rate)))
         property_value *= (1 + curr_property_appreciation)
         property_tax = property_value * property_tax_rate
         property_maintenance = property_value * property_maintenance_rate
@@ -697,6 +722,7 @@ def simulate_mixed_portfolio(
 
         free_cash_flow = (
             after_tax_salary
+            + after_tax_pension_income
             + annual_extra_cashflow
             - curr_living
             - curr_fixed
@@ -759,7 +785,9 @@ def simulate_mixed_portfolio(
         records.append(
             {
                 "Year": year,
+                "Gross Labor Income": round(gross_labor_income, 0),
                 "After-Tax Salary": round(after_tax_salary, 0),
+                "After-Tax Pension": round(after_tax_pension_income, 0),
                 "Free Cash Flow": round(free_cash_flow, 0),
                 "Yearly Investment": round(yearly_investment, 0),
                 "Portfolio Value": round(total_portfolio, 0),
@@ -1314,6 +1342,38 @@ def render_scenario_simulator(engine: DanishTaxEngine):
         property_tax_rate = st.slider("Ejendomsskat (% af værdi)", 0.0, 2.5, round(cprof["property_tax_rate"] * 100, 2), 0.05) / 100
         property_maintenance_rate = st.slider("Boligvedligehold/drift (% af værdi)", 0.0, 2.5, round(cprof["property_maintenance_rate"] * 100, 2), 0.05) / 100
 
+    st.subheader("1a) Arbejdsliv og pension")
+    rp1, rp2, rp3, rp4 = st.columns(4)
+    with rp1:
+        enable_retirement = st.toggle("Planlæg nedtrapning/pension", value=False)
+        retirement_in_years = st.slider("Pension om (år)", 0, years, min(10, years)) if enable_retirement else years + 1
+    with rp2:
+        phase_down_years = st.slider("Nedtrapning før pension (år)", 0, 15, 3) if enable_retirement else 0
+        salary_after_retirement_pct = (
+            st.slider("Arbejdsløn efter pension (% af nu)", 0, 100, 0, 5) if enable_retirement else 100
+        )
+    with rp3:
+        annual_public_pension = int_input_with_commas(
+            "Offentlig pension (DKK/år)",
+            key="sim_public_pension",
+            min_value=0,
+            max_value=2_000_000,
+            value=180_000,
+            step=5_000,
+        )
+    with rp4:
+        annual_private_pension = int_input_with_commas(
+            "Privat pension (DKK/år)",
+            key="sim_private_pension",
+            min_value=0,
+            max_value=3_000_000,
+            value=120_000,
+            step=5_000,
+        )
+        pension_tax_rate = st.slider("Skat på pensionsindkomst (%)", 15.0, 60.0, 37.0, 0.5) / 100
+
+    retirement_start_year = (retirement_in_years + 1) if enable_retirement else None
+
     st.subheader("1b) Cash & reservepolitik")
     rv1, rv2 = st.columns(2)
     with rv1:
@@ -1347,12 +1407,32 @@ def render_scenario_simulator(engine: DanishTaxEngine):
         st.metric("Nettorente efter fradrag", fmt_pct(net_rate))
 
     st.subheader("2a) Cash flow statement (fra investorprofil)")
-    year1_after_tax_income = annual_salary * (1 - effective_income_tax)
+    if retirement_start_year is not None and retirement_start_year <= 1:
+        year1_salary_factor = salary_after_retirement_pct / 100
+    elif retirement_start_year is not None and phase_down_years > 0:
+        phase_start = max(1, retirement_start_year - phase_down_years)
+        if 1 >= phase_start and 1 < retirement_start_year:
+            progress = (1 - phase_start + 1) / max(1, (retirement_start_year - phase_start + 1))
+            year1_salary_factor = 1.0 + ((salary_after_retirement_pct / 100) - 1.0) * progress
+        else:
+            year1_salary_factor = 1.0
+    else:
+        year1_salary_factor = 1.0
+
+    year1_gross_salary = annual_salary * year1_salary_factor
+    year1_after_tax_income = year1_gross_salary * (1 - effective_income_tax)
+    year1_gross_pension = (
+        (annual_public_pension + annual_private_pension)
+        if retirement_start_year is not None and retirement_start_year <= 1
+        else 0.0
+    )
+    year1_after_tax_pension = year1_gross_pension * (1 - pension_tax_rate)
     year1_property_tax = home_value * (1 + property_appreciation) * property_tax_rate
     year1_property_maint = home_value * (1 + property_appreciation) * property_maintenance_rate
     year1_net_interest = leverage_amount * (mortgage_rate + regime.get("rate_shift", 0.0)) * (1 - RENTEFRADRAG_TAX_VALUE)
     year1_free_cf = (
         year1_after_tax_income
+        + year1_after_tax_pension
         + annual_extra_cashflow
         - annual_living_cost
         - annual_household_fixed
@@ -1367,6 +1447,7 @@ def render_scenario_simulator(engine: DanishTaxEngine):
         {
             "Led": [
                 "Efter-skat løn",
+                "Efter-skat pension",
                 "Anden netto cashflow",
                 "Leveomkostninger",
                 "Store faste udgifter",
@@ -1379,6 +1460,7 @@ def render_scenario_simulator(engine: DanishTaxEngine):
             ],
             "DKK/år": [
                 year1_after_tax_income,
+                year1_after_tax_pension,
                 annual_extra_cashflow,
                 -annual_living_cost,
                 -annual_household_fixed,
@@ -1598,6 +1680,12 @@ def render_scenario_simulator(engine: DanishTaxEngine):
         ask_cap=ask_cap,
         leverage_amount=leverage_amount,
         mortgage_rate=mortgage_rate,
+        retirement_start_year=retirement_start_year,
+        phase_down_years=phase_down_years,
+        salary_after_retirement_pct=salary_after_retirement_pct,
+        annual_public_pension=annual_public_pension,
+        annual_private_pension=annual_private_pension,
+        pension_tax_rate=pension_tax_rate,
         free_cashflow_invest_share=invest_share_pct / 100,
         annual_salary_growth=regime["salary_growth"],
         inflation_rate=regime["inflation"],
