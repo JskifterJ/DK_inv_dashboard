@@ -1,5 +1,16 @@
 # 🇩🇰 Dansk Investerings Dashboard & Scenario Simulator
 
+> **In English:** A household-first investment planning tool for Danish investors, built in Python with Streamlit (developed with Claude Code). It follows one decision chain, from gross income through effective tax, expenses and free cash flow to the Danish equity savings account (ASK), account structure and net worth.
+>
+> - **Tax engine** on simplified 2026 Danish rules (share-income brackets, ASK, corporate tax, interest deduction)
+> - **Account structure comparison:** private accounts vs. a holding company (ApS) vs. a hybrid, with ASK filled cap-first
+> - **Risk-adjusted planning:** base/bull/bear macro regimes, a glidepath from risk assets into bonds set by the investor's risk comfort, and Monte Carlo simulation of the probability of reaching the goal
+> - **Leverage check:** loan-to-value and post-tax interest spread on home equity
+> - **Live portfolio tracker** with historical prices and latent tax per position, plus real-estate and private-equity trackers
+> - **Decision output:** a line-by-line year-one cash-flow explanation, an implementation plan and an advisor export (CSV/TXT)
+>
+> An educational decision tool, not tax or legal advice. The interface and the rest of this README are in Danish.
+
 Et household-first Streamlit dashboard for danske investorer.
 Fokus er at vise en konsistent beslutningskæde:
 
@@ -18,13 +29,6 @@ python -m streamlit run app.py --server.port 8501
 ```
 
 Åbner på `http://localhost:8501`
-
-If not running:
-```bash
-kill 53132
-source .venv/bin/activate
-python -m streamlit run app.py --server.port 8501
-```
 
 ---
 
